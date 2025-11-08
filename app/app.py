@@ -41,7 +41,7 @@ diet_chart = {
 
 @app.route('/')
 def index():
-    return render_template('index_v12.html')
+    return render_template('index.html')
 
 @app.route('/api/workouts', methods=['GET'])
 def get_workouts():
