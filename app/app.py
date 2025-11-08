@@ -4,8 +4,12 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# In-memory storage (for demo purposes)
-workouts = []
+# In-memory storage with categories
+workouts = {
+    "Warm-up": [],
+    "Workout": [],
+    "Cool-down": []
+}
 
 @app.route('/')
 def index():
@@ -13,39 +17,58 @@ def index():
 
 @app.route('/api/workouts', methods=['GET'])
 def get_workouts():
-    """Get all workouts"""
-    return jsonify({"workouts": workouts, "status": "success"})
+    """Get all categorized workouts"""
+    total_time = sum(sum(w['duration'] for w in cat) for cat in workouts.values())
+    return jsonify({
+        "workouts": workouts,
+        "total_time": total_time,
+        "status": "success"
+    })
 
 @app.route('/api/workouts', methods=['POST'])
 def add_workout():
-    """Add a new workout"""
+    """Add a new workout to a category"""
     data = request.json
 
-    workout_name = data.get('workout')
+    category = data.get('category')
+    exercise = data.get('exercise')
     duration = data.get('duration')
 
-    if not workout_name or not duration:
-        return jsonify({"status": "error", "message": "Please provide both workout and duration"}), 400
+    if category not in workouts:
+        return jsonify({"status": "error", "message": "Invalid category"}), 400
+
+    if not exercise or not duration:
+        return jsonify({"status": "error", "message": "Please provide exercise and duration"}), 400
 
     try:
         duration = int(duration)
         workout_entry = {
-            "id": len(workouts) + 1,
-            "workout": workout_name,
+            "id": len(workouts[category]) + 1,
+            "exercise": exercise,
             "duration": duration,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        workouts.append(workout_entry)
-        return jsonify({"status": "success", "message": f"'{workout_name}' added successfully!", "workout": workout_entry})
+        workouts[category].append(workout_entry)
+
+        # Calculate total time
+        total_time = sum(sum(w['duration'] for w in cat) for cat in workouts.values())
+
+        # Motivational message
+        if total_time >= 60:
+            message = "🎉 Great job! You've logged over 60 minutes!"
+        elif total_time >= 30:
+            message = "💪 Keep going! You're making progress!"
+        else:
+            message = f"✅ '{exercise}' added successfully!"
+
+        return jsonify({
+            "status": "success",
+            "message": message,
+            "workout": workout_entry,
+            "total_time": total_time
+        })
     except ValueError:
         return jsonify({"status": "error", "message": "Duration must be a number"}), 400
-
-@app.route('/api/workouts/<int:workout_id>', methods=['DELETE'])
-def delete_workout(workout_id):
-    """Delete a workout by ID"""
-    global workouts
-    workouts = [w for w in workouts if w['id'] != workout_id]
-    return jsonify({"status": "success", "message": "Workout deleted"})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

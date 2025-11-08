@@ -3,39 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACEest Fitness & Gym - v1.0</title>
+    <title>ACEest Fitness & Gym - v1.1</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
 <div class="container mt-5">
     <div class="row">
-        <div class="col-md-8 offset-md-2">
+        <div class="col-md-10 offset-md-1">
             <div class="card shadow">
-                <div class="card-header bg-primary text-white">
-                    <h3 class="mb-0"><i class="bi bi-heart-pulse"></i> ACEest Fitness & Gym Tracker v1.0</h3>
+                <div class="card-header bg-success text-white">
+                    <h3 class="mb-0"><i class="bi bi-heart-pulse"></i> ACEest Fitness & Gym Tracker v1.1</h3>
                 </div>
                 <div class="card-body">
+                    <!-- Status Bar -->
+                    <div class="alert alert-info" id="statusBar">
+                        <strong>Total Time:</strong> <span id="totalTime">0</span> minutes
+                    </div>
+
                     <!-- Add Workout Form -->
-                    <h5>Add Workout</h5>
+                    <h5>Log Workout Session</h5>
                     <form id="workoutForm">
-                        <div class="mb-3">
-                            <label for="workout" class="form-label">Workout:</label>
-                            <input type="text" class="form-control" id="workout" required>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="category" class="form-label">Category:</label>
+                                <select class="form-select" id="category" required>
+                                    <option value="Warm-up">🔥 Warm-up</option>
+                                    <option value="Workout" selected>💪 Workout</option>
+                                    <option value="Cool-down">🧘 Cool-down</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="exercise" class="form-label">Exercise:</label>
+                                <input type="text" class="form-control" id="exercise" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="duration" class="form-label">Duration (min):</label>
+                                <input type="number" class="form-control" id="duration" required>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="duration" class="form-label">Duration (minutes):</label>
-                            <input type="number" class="form-control" id="duration" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Add Workout</button>
+                        <button type="submit" class="btn btn-success"><i class="bi bi-plus-circle"></i> Add Session</button>
+                        <button type="button" class="btn btn-info" onclick="viewSummary()"><i class="bi bi-list-ul"></i> View Summary</button>
                     </form>
 
                     <hr>
 
-                    <!-- View Workouts -->
-                    <h5>Logged Workouts</h5>
-                    <div id="workoutList" class="mt-3">
-                        <p class="text-muted">No workouts logged yet.</p>
+                    <!-- Categorized Workouts -->
+                    <div id="workoutDisplay">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <h6 class="text-danger">🔥 Warm-up</h6>
+                                <div id="warmup-list" class="mb-3"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <h6 class="text-success">💪 Workout</h6>
+                                <div id="workout-list" class="mb-3"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <h6 class="text-primary">🧘 Cool-down</h6>
+                                <div id="cooldown-list" class="mb-3"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -45,20 +73,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // Load workouts on page load
     document.addEventListener('DOMContentLoaded', loadWorkouts);
 
-    // Add workout form submission
     document.getElementById('workoutForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const workout = document.getElementById('workout').value;
+        const category = document.getElementById('category').value;
+        const exercise = document.getElementById('exercise').value;
         const duration = document.getElementById('duration').value;
 
         const response = await fetch('/api/workouts', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({workout, duration})
+            body: JSON.stringify({category, exercise, duration})
         });
 
         const result = await response.json();
@@ -72,38 +99,45 @@
         }
     });
 
-    // Load and display workouts
     async function loadWorkouts() {
         const response = await fetch('/api/workouts');
         const data = await response.json();
 
-        const workoutList = document.getElementById('workoutList');
+        document.getElementById('totalTime').textContent = data.total_time;
 
-        if (data.workouts.length === 0) {
-            workoutList.innerHTML = '<p class="text-muted">No workouts logged yet.</p>';
-        } else {
-            let html = '<ul class="list-group">';
-            data.workouts.forEach(w => {
-                html += `
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span><strong>${w.workout}</strong> - ${w.duration} minutes</span>
-                            <button class="btn btn-sm btn-danger" onclick="deleteWorkout(${w.id})">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </li>
-                    `;
-            });
-            html += '</ul>';
-            workoutList.innerHTML = html;
-        }
+        // Display workouts by category
+        ['Warm-up', 'Workout', 'Cool-down'].forEach(category => {
+            const listId = category.toLowerCase().replace('-', '') + '-list';
+            const element = document.getElementById(listId);
+
+            if (data.workouts[category].length === 0) {
+                element.innerHTML = '<p class="text-muted small">No sessions</p>';
+            } else {
+                let html = '<ul class="list-group list-group-sm">';
+                data.workouts[category].forEach(w => {
+                    html += `<li class="list-group-item py-1"><small>${w.exercise} - ${w.duration} min</small></li>`;
+                });
+                html += '</ul>';
+                element.innerHTML = html;
+            }
+        });
     }
 
-    // Delete workout
-    async function deleteWorkout(id) {
-        if (confirm('Are you sure you want to delete this workout?')) {
-            await fetch(`/api/workouts/${id}`, {method: 'DELETE'});
-            loadWorkouts();
-        }
+    function viewSummary() {
+        fetch('/api/workouts')
+            .then(res => res.json())
+            .then(data => {
+                let summary = 'Workout Summary:\n\n';
+                Object.keys(data.workouts).forEach(cat => {
+                    summary += `${cat}:\n`;
+                    data.workouts[cat].forEach(w => {
+                        summary += `  - ${w.exercise} (${w.duration} min) at ${w.timestamp}\n`;
+                    });
+                    summary += '\n';
+                });
+                summary += `Total Time: ${data.total_time} minutes`;
+                alert(summary);
+            });
     }
 </script>
 </body>
