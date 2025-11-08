@@ -209,6 +209,40 @@
                 alert(summary);
             });
     }
+
+    // In a new Progress tab
+    async function loadProgressCharts() {
+        const response = await fetch('/api/workout-stats');
+        const data = await response.json();
+
+        // Bar Chart
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: data.categories,
+                datasets: [{
+                    label: 'Total Minutes',
+                    data: data.durations,
+                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56']
+                }]
+            }
+        });
+
+        // Pie Chart
+        const ctxPie = document.getElementById('pieChart').getContext('2d');
+        new Chart(ctxPie, {
+            type: 'pie',
+            data: {
+                labels: data.categories,
+                datasets: [{
+                    data: data.durations,
+                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56']
+                }]
+            }
+        });
+    }
+
 </script>
 </body>
 </html>

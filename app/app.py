@@ -91,6 +91,16 @@ def get_workout_chart():
 def get_diet_chart():
     return jsonify(diet_chart)
 
+@app.route('/api/workout-stats', methods=['GET'])
+def get_workout_stats():
+    """Get workout statistics for charts"""
+    stats = {
+        "categories": list(workouts.keys()),
+        "durations": [sum(w['duration'] for w in workouts[cat]) for cat in workouts.keys()],
+        "counts": [len(workouts[cat]) for cat in workouts.keys()]
+    }
+    return jsonify(stats)
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
