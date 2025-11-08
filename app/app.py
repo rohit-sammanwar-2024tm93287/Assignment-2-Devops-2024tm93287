@@ -4,20 +4,47 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# In-memory storage with categories
 workouts = {
     "Warm-up": [],
     "Workout": [],
     "Cool-down": []
 }
 
+# Workout chart data
+workout_chart = {
+    "Warm-up": ["Jumping Jacks", "Arm Circles", "Leg Swings", "Dynamic Stretches"],
+    "Workout": ["Push-ups", "Squats", "Lunges", "Planks", "Burpees"],
+    "Cool-down": ["Static Stretching", "Deep Breathing", "Walking"]
+}
+
+# Diet chart data
+diet_chart = {
+    "Weight Loss": {
+        "breakfast": "Oatmeal with berries",
+        "lunch": "Grilled chicken salad",
+        "dinner": "Steamed fish with vegetables",
+        "snacks": "Almonds, Greek yogurt"
+    },
+    "Muscle Gain": {
+        "breakfast": "Scrambled eggs with toast",
+        "lunch": "Chicken breast with rice",
+        "dinner": "Steak with sweet potato",
+        "snacks": "Protein shake, peanut butter"
+    },
+    "Endurance": {
+        "breakfast": "Banana smoothie with oats",
+        "lunch": "Pasta with lean meat",
+        "dinner": "Salmon with quinoa",
+        "snacks": "Energy bars, fruits"
+    }
+}
+
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index_v12.html')
 
 @app.route('/api/workouts', methods=['GET'])
 def get_workouts():
-    """Get all categorized workouts"""
     total_time = sum(sum(w['duration'] for w in cat) for cat in workouts.values())
     return jsonify({
         "workouts": workouts,
@@ -27,9 +54,7 @@ def get_workouts():
 
 @app.route('/api/workouts', methods=['POST'])
 def add_workout():
-    """Add a new workout to a category"""
     data = request.json
-
     category = data.get('category')
     exercise = data.get('exercise')
     duration = data.get('duration')
@@ -50,25 +75,21 @@ def add_workout():
         }
         workouts[category].append(workout_entry)
 
-        # Calculate total time
-        total_time = sum(sum(w['duration'] for w in cat) for cat in workouts.values())
-
-        # Motivational message
-        if total_time >= 60:
-            message = "🎉 Great job! You've logged over 60 minutes!"
-        elif total_time >= 30:
-            message = "💪 Keep going! You're making progress!"
-        else:
-            message = f"✅ '{exercise}' added successfully!"
-
         return jsonify({
             "status": "success",
-            "message": message,
-            "workout": workout_entry,
-            "total_time": total_time
+            "message": f"✅ '{exercise}' added successfully!",
+            "workout": workout_entry
         })
     except ValueError:
         return jsonify({"status": "error", "message": "Duration must be a number"}), 400
+
+@app.route('/api/workout-chart', methods=['GET'])
+def get_workout_chart():
+    return jsonify(workout_chart)
+
+@app.route('/api/diet-chart', methods=['GET'])
+def get_diet_chart():
+    return jsonify(diet_chart)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
