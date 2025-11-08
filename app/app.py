@@ -41,7 +41,7 @@ def calculate_calories(met_value, weight_kg, duration_min):
 
 @app.route('/')
 def index():
-    return render_template('index_v13.html')
+    return render_template('index.html')
 
 @app.route('/api/user-info', methods=['GET'])
 def get_user_info():
