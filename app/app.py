@@ -3,16 +3,12 @@ import os
 from datetime import datetime, date
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.platypus import Table, TableStyle
-from reportlab.lib import colors as rl_colors
 import io
 
 app = Flask(__name__)
 
-# User info storage
+# Global state
 user_info = {}
-
-# Workouts organized by date and category
 workouts_by_date = {}
 
 # MET values
@@ -51,7 +47,7 @@ def get_user_info():
 @app.route('/api/user-info', methods=['POST'])
 def save_user_info():
     """Save user information and calculate BMI/BMR"""
-    global user_info
+    # Don't declare global here if we're updating in place
     data = request.json
 
     try:
@@ -65,7 +61,9 @@ def save_user_info():
         bmi = calculate_bmi(height, weight)
         bmr = calculate_bmr(age, gender, height, weight)
 
-        user_info = {
+        # UPDATE IN-PLACE instead of reassigning
+        user_info.clear()  # Clear first
+        user_info.update({  # Then update
             "name": name,
             "regn_id": regn_id,
             "age": age,
@@ -74,7 +72,7 @@ def save_user_info():
             "weight": weight,
             "bmi": bmi,
             "bmr": bmr
-        }
+        })
 
         return jsonify({
             "status": "success",
@@ -101,20 +99,34 @@ def add_workout():
     exercise = data.get('exercise')
     duration = data.get('duration')
 
+    # CRITICAL: Check user info FIRST before any other validation
+    if not user_info:  # Empty dict check
+        return jsonify({
+            "status": "error",
+            "message": "Please save user info first to track calories"
+        }), 400
+
+    if 'weight' not in user_info:  # Check if weight key exists
+        return jsonify({
+            "status": "error",
+            "message": "User weight is required to calculate calories"
+        }), 400
+
+    # Now validate other inputs
     if category not in MET_VALUES:
         return jsonify({"status": "error", "message": "Invalid category"}), 400
 
     if not exercise or not duration:
-        return jsonify({"status": "error", "message": "Please provide exercise and duration"}), 400
-
-    if not user_info.get('weight'):
-        return jsonify({"status": "error", "message": "Please save user info first to track calories"}), 400
+        return jsonify({
+            "status": "error",
+            "message": "Please provide exercise and duration"
+        }), 400
 
     try:
         duration = int(duration)
         today = date.today().isoformat()
 
-        # Calculate calories
+        # Now safe to calculate calories (we know user_info has weight)
         calories = calculate_calories(MET_VALUES[category], user_info['weight'], duration)
 
         workout_entry = {
@@ -137,6 +149,8 @@ def add_workout():
         })
     except ValueError:
         return jsonify({"status": "error", "message": "Duration must be a number"}), 400
+    except KeyError as e:
+        return jsonify({"status": "error", "message": f"Missing user data: {str(e)}"}), 400
 
 @app.route('/api/workout-stats', methods=['GET'])
 def get_workout_stats():
@@ -157,8 +171,22 @@ def get_workout_stats():
 @app.route('/api/export-pdf', methods=['GET'])
 def export_pdf():
     """Export weekly fitness report as PDF"""
-    if not user_info:
-        return jsonify({"status": "error", "message": "Please save user info first"}), 400
+    # CRITICAL: Check user info exists
+    if not user_info:  # Empty dict check
+        return jsonify({
+            "status": "error",
+            "message": "Please save user info first"
+        }), 400
+
+    # Check required fields
+    required_fields = ['name', 'regn_id', 'age', 'gender', 'height', 'weight', 'bmi', 'bmr']
+    missing_fields = [field for field in required_fields if field not in user_info]
+
+    if missing_fields:
+        return jsonify({
+            "status": "error",
+            "message": f"Missing user information: {', '.join(missing_fields)}"
+        }), 400
 
     # Create PDF in memory
     buffer = io.BytesIO()
@@ -187,20 +215,23 @@ def export_pdf():
     y_pos = y - 150
     pdf.setFont("Helvetica", 10)
 
-    for workout_date, workouts in workouts_by_date.items():
-        pdf.drawString(50, y_pos, f"Date: {workout_date}")
-        y_pos -= 20
+    if workouts_by_date:
+        for workout_date, workouts in workouts_by_date.items():
+            pdf.drawString(50, y_pos, f"Date: {workout_date}")
+            y_pos -= 20
 
-        for workout in workouts:
-            pdf.drawString(70, y_pos,
-                           f"• {workout['category']}: {workout['exercise']} - {workout['duration']} min - {workout['calories']} cal")
-            y_pos -= 15
+            for workout in workouts:
+                pdf.drawString(70, y_pos,
+                               f"• {workout['category']}: {workout['exercise']} - {workout['duration']} min - {workout['calories']} cal")
+                y_pos -= 15
 
-            if y_pos < 100:  # New page if running out of space
-                pdf.showPage()
-                y_pos = height - 50
+                if y_pos < 100:
+                    pdf.showPage()
+                    y_pos = height - 50
 
-        y_pos -= 10
+            y_pos -= 10
+    else:
+        pdf.drawString(50, y_pos, "No workouts logged yet.")
 
     pdf.save()
     buffer.seek(0)
