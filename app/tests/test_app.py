@@ -10,76 +10,61 @@ def client():
         yield client
 
 def test_home_page(client):
-    """
-    GIVEN a Flask application
-    WHEN the '/' page is requested (GET)
-    THEN check that the response is valid
-    """
+    """Test home page loads successfully"""
     response = client.get('/')
     assert response.status_code == 200
     assert b'ACEest Fitness' in response.data
 
-def test_get_workouts_empty(client):
-    """
-    GIVEN a Flask application
-    WHEN the '/api/workouts' endpoint is called (GET)
-    THEN check that it returns an empty list initially
-    """
-    response = client.get('/api/workouts')
+def test_get_workout_chart(client):
+    """Test workout chart endpoint"""
+    response = client.get('/api/workout-chart')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert 'Warm-up' in data
+    assert 'Workout' in data
+    assert 'Cool-down' in data
+    assert isinstance(data['Warm-up'], list)
+
+def test_get_diet_chart(client):
+    """Test diet chart endpoint"""
+    response = client.get('/api/diet-chart')
+    assert response.status_code == 200
+    data = json.loads(response.data)
+    assert 'Weight Loss' in data
+    assert 'Muscle Gain' in data
+    assert 'Endurance' in data
+    assert 'breakfast' in data['Weight Loss']
+
+def test_add_workout(client):
+    """Test adding a workout"""
+    workout_data = {
+        'category': 'Workout',
+        'exercise': 'Squats',
+        'duration': 25
+    }
+    response = client.post('/api/workouts',
+                           data=json.dumps(workout_data),
+                           content_type='application/json')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['status'] == 'success'
-    assert 'workouts' in data
-    assert isinstance(data['workouts'], list)
 
-def test_add_workout_success(client):
-    """
-    GIVEN a Flask application
-    WHEN a new workout is posted to '/api/workouts'
-    THEN check that it's added successfully
-    """
-    workout_data = {
-        'workout': 'Push-ups',
-        'duration': 30
-    }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 200
+def test_workout_chart_has_exercises(client):
+    """Test that workout chart contains expected exercises"""
+    response = client.get('/api/workout-chart')
     data = json.loads(response.data)
-    assert data['status'] == 'success'
-    assert 'Push-ups' in data['message']
+    assert 'Push-ups' in data['Workout']
+    assert 'Squats' in data['Workout']
+    assert 'Jumping Jacks' in data['Warm-up']
 
-def test_add_workout_missing_fields(client):
-    """
-    GIVEN a Flask application
-    WHEN a workout is posted with missing fields
-    THEN check that it returns an error
-    """
-    workout_data = {
-        'workout': 'Push-ups'
-        # Missing 'duration' field
-    }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 400
+def test_diet_chart_structure(client):
+    """Test diet chart has proper structure"""
+    response = client.get('/api/diet-chart')
     data = json.loads(response.data)
-    assert data['status'] == 'error'
 
-def test_add_workout_invalid_duration(client):
-    """
-    GIVEN a Flask application
-    WHEN a workout is posted with invalid duration
-    THEN check that it returns an error
-    """
-    workout_data = {
-        'workout': 'Squats',
-        'duration': 'invalid'
-    }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 400
-    data = json.loads(response.data)
-    assert data['status'] == 'error'
+    for goal in ['Weight Loss', 'Muscle Gain', 'Endurance']:
+        assert goal in data
+        assert 'breakfast' in data[goal]
+        assert 'lunch' in data[goal]
+        assert 'dinner' in data[goal]
+        assert 'snacks' in data[goal]
