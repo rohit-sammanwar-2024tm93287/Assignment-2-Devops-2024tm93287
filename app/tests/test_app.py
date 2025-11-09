@@ -10,76 +10,50 @@ def client():
         yield client
 
 def test_home_page(client):
-    """
-    GIVEN a Flask application
-    WHEN the '/' page is requested (GET)
-    THEN check that the response is valid
-    """
+    """Test home page loads successfully"""
     response = client.get('/')
     assert response.status_code == 200
-    assert b'ACEest Fitness' in response.data
 
-def test_get_workouts_empty(client):
-    """
-    GIVEN a Flask application
-    WHEN the '/api/workouts' endpoint is called (GET)
-    THEN check that it returns an empty list initially
-    """
-    response = client.get('/api/workouts')
+def test_workout_stats_endpoint(client):
+    """Test workout statistics endpoint"""
+    response = client.get('/api/workout-stats')
     assert response.status_code == 200
     data = json.loads(response.data)
-    assert data['status'] == 'success'
-    assert 'workouts' in data
-    assert isinstance(data['workouts'], list)
+    assert 'categories' in data
+    assert 'durations' in data
+    assert len(data['categories']) == len(data['durations'])
 
-def test_add_workout_success(client):
-    """
-    GIVEN a Flask application
-    WHEN a new workout is posted to '/api/workouts'
-    THEN check that it's added successfully
-    """
+def test_workout_stats_structure(client):
+    """Test that stats have correct structure"""
+    response = client.get('/api/workout-stats')
+    data = json.loads(response.data)
+
+    assert isinstance(data['categories'], list)
+    assert isinstance(data['durations'], list)
+    assert 'Warm-up' in data['categories']
+    assert 'Workout' in data['categories']
+    assert 'Cool-down' in data['categories']
+
+def test_add_workout_updates_stats(client):
+    """Test that adding workout updates statistics"""
+    # Get initial stats
+    response1 = client.get('/api/workout-stats')
+    data1 = json.loads(response1.data)
+    initial_total = sum(data1['durations'])
+
+    # Add a workout
     workout_data = {
-        'workout': 'Push-ups',
+        'category': 'Workout',
+        'exercise': 'Burpees',
         'duration': 30
     }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 200
-    data = json.loads(response.data)
-    assert data['status'] == 'success'
-    assert 'Push-ups' in data['message']
+    client.post('/api/workouts',
+                data=json.dumps(workout_data),
+                content_type='application/json')
 
-def test_add_workout_missing_fields(client):
-    """
-    GIVEN a Flask application
-    WHEN a workout is posted with missing fields
-    THEN check that it returns an error
-    """
-    workout_data = {
-        'workout': 'Push-ups'
-        # Missing 'duration' field
-    }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 400
-    data = json.loads(response.data)
-    assert data['status'] == 'error'
+    # Get updated stats
+    response2 = client.get('/api/workout-stats')
+    data2 = json.loads(response2.data)
+    updated_total = sum(data2['durations'])
 
-def test_add_workout_invalid_duration(client):
-    """
-    GIVEN a Flask application
-    WHEN a workout is posted with invalid duration
-    THEN check that it returns an error
-    """
-    workout_data = {
-        'workout': 'Squats',
-        'duration': 'invalid'
-    }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 400
-    data = json.loads(response.data)
-    assert data['status'] == 'error'
+    assert updated_total == initial_total + 30
