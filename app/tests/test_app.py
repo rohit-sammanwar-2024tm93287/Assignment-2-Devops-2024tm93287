@@ -1,46 +1,45 @@
 import pytest
 import json
-from app import app
+from app import app, workouts  # Import workouts dictionary
 
 @pytest.fixture
 def client():
     """Create a test client for the Flask application"""
     app.config['TESTING'] = True
+
+    # Clear workouts before each test
+    for category in workouts:
+        workouts[category].clear()
+
     with app.test_client() as client:
         yield client
 
+    # Clean up after test
+    for category in workouts:
+        workouts[category].clear()
+
 def test_home_page(client):
-    """
-    GIVEN a Flask application
-    WHEN the '/' page is requested (GET)
-    THEN check that the response is valid
-    """
+    """Test home page loads successfully"""
     response = client.get('/')
     assert response.status_code == 200
     assert b'ACEest Fitness' in response.data
 
-def test_get_workouts_empty(client):
-    """
-    GIVEN a Flask application
-    WHEN the '/api/workouts' endpoint is called (GET)
-    THEN check that it returns an empty list initially
-    """
+def test_get_categorized_workouts(client):
+    """Test that workouts are returned with categories"""
     response = client.get('/api/workouts')
     assert response.status_code == 200
     data = json.loads(response.data)
-    assert data['status'] == 'success'
     assert 'workouts' in data
-    assert isinstance(data['workouts'], list)
+    assert 'Warm-up' in data['workouts']
+    assert 'Workout' in data['workouts']
+    assert 'Cool-down' in data['workouts']
 
-def test_add_workout_success(client):
-    """
-    GIVEN a Flask application
-    WHEN a new workout is posted to '/api/workouts'
-    THEN check that it's added successfully
-    """
+def test_add_workout_to_category(client):
+    """Test adding workout to specific category"""
     workout_data = {
-        'workout': 'Push-ups',
-        'duration': 30
+        'category': 'Warm-up',
+        'exercise': 'Jumping Jacks',
+        'duration': 10
     }
     response = client.post('/api/workouts',
                            data=json.dumps(workout_data),
@@ -48,17 +47,14 @@ def test_add_workout_success(client):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert data['status'] == 'success'
-    assert 'Push-ups' in data['message']
+    assert 'Jumping Jacks' in data['message']
 
-def test_add_workout_missing_fields(client):
-    """
-    GIVEN a Flask application
-    WHEN a workout is posted with missing fields
-    THEN check that it returns an error
-    """
+def test_add_workout_invalid_category(client):
+    """Test adding workout with invalid category"""
     workout_data = {
-        'workout': 'Push-ups'
-        # Missing 'duration' field
+        'category': 'InvalidCategory',
+        'exercise': 'Running',
+        'duration': 20
     }
     response = client.post('/api/workouts',
                            data=json.dumps(workout_data),
@@ -66,20 +62,29 @@ def test_add_workout_missing_fields(client):
     assert response.status_code == 400
     data = json.loads(response.data)
     assert data['status'] == 'error'
+    assert 'Invalid category' in data['message']
 
-def test_add_workout_invalid_duration(client):
-    """
-    GIVEN a Flask application
-    WHEN a workout is posted with invalid duration
-    THEN check that it returns an error
-    """
-    workout_data = {
-        'workout': 'Squats',
-        'duration': 'invalid'
-    }
-    response = client.post('/api/workouts',
-                           data=json.dumps(workout_data),
-                           content_type='application/json')
-    assert response.status_code == 400
+def test_total_time_calculation(client):
+    """Test that total time is calculated correctly"""
+    # Verify starting with clean state
+    response = client.get('/api/workouts')
+    initial_data = json.loads(response.data)
+    assert initial_data['total_time'] == 0, f"Expected 0, got {initial_data['total_time']}"
+
+    # Add multiple workouts
+    test_workouts = [
+        {'category': 'Warm-up', 'exercise': 'Stretching', 'duration': 10},
+        {'category': 'Workout', 'exercise': 'Push-ups', 'duration': 20},
+        {'category': 'Cool-down', 'exercise': 'Walking', 'duration': 15}
+    ]
+
+    for workout in test_workouts:
+        response = client.post('/api/workouts',
+                               data=json.dumps(workout),
+                               content_type='application/json')
+        assert response.status_code == 200
+
+    # Verify total time
+    response = client.get('/api/workouts')
     data = json.loads(response.data)
-    assert data['status'] == 'error'
+    assert data['total_time'] == 45, f"Expected 45, got {data['total_time']}"
