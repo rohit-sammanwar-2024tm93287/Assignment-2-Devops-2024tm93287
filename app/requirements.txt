@@ -2,7 +2,7 @@ Flask==2.2.5
 gunicorn==22.0.0
 matplotlib==3.5.3
 reportlab==4.0.7
-Pillow==10.1.0
+Pillow==9.5.0
 numpy==1.26.2
 requests==2.31.0
 
