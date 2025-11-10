@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACEest Fitness & Gym - v1.3</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        .user-info-card {
+            position: sticky;
+            top: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+<div class="container-fluid mt-4">
+    <div class="row">
+        <!-- User Info Sidebar -->
+        <div class="col-md-3">
+            <div class="user-info-card">
+                <h5><i class="bi bi-person-circle"></i> User Profile</h5>
+                <form id="userForm">
+                    <div class="mb-2">
+                        <input type="text" class="form-control form-control-sm" id="name" placeholder="Full Name" required>
+                    </div>
+                    <div class="mb-2">
+                        <input type="text" class="form-control form-control-sm" id="regn_id" placeholder="Regn ID" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-2">
+                            <input type="number" class="form-control form-control-sm" id="age" placeholder="Age" required>
+                        </div>
+                        <div class="col-6 mb-2">
+                            <select class="form-select form-select-sm" id="gender" required>
+                                <option value="">Gender</option>
+                                <option value="M">Male</option>
+                                <option value="F">Female</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-2">
+                            <input type="number" class="form-control form-control-sm" id="height" placeholder="Height(cm)" required>
+                        </div>
+                        <div class="col-6 mb-2">
+                            <input type="number" class="form-control form-control-sm" id="weight" placeholder="Weight(kg)" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-light btn-sm w-100">Save Info</button>
+                </form>
+
+                <hr style="border-color: rgba(255,255,255,0.3)">
+
+                <div id="userDisplay" class="small">
+                    <p class="mb-1"><strong>BMI:</strong> <span id="bmiValue">--</span></p>
+                    <p class="mb-1"><strong>BMR:</strong> <span id="bmrValue">--</span> cal/day</p>
+                </div>
+
+                <button class="btn btn-warning btn-sm w-100 mt-3" onclick="exportPDF()">
+                    <i class="bi bi-file-pdf"></i> Export PDF Report
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-9">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0"><i class="bi bi-heart-pulse"></i> ACEest Fitness & Gym Tracker v1.3</h3>
+                </div>
+                <div class="card-body">
+                    <!-- Tabs -->
+                    <ul class="nav nav-tabs" id="mainTab" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" id="log-tab" data-bs-toggle="tab" data-bs-target="#log">
+                                🏋️ Log Workouts
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="plan-tab" data-bs-toggle="tab" data-bs-target="#plan">
+                                💡 Workout Plan
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="diet-tab" data-bs-toggle="tab" data-bs-target="#diet">
+                                🥗 Diet Guide
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="progress-tab" data-bs-toggle="tab" data-bs-target="#progress" onclick="loadCharts()">
+                                📈 Progress Tracker
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content mt-3">
+                        <!-- Log Workouts Tab -->
+                        <div class="tab-pane fade show active" id="log">
+                            <form id="workoutForm" class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">Category</label>
+                                    <select class="form-select" id="category" required>
+                                        <option value="Warm-up">🔥 Warm-up (3 MET)</option>
+                                        <option value="Workout" selected>💪 Workout (6 MET)</option>
+                                        <option value="Cool-down">🧘 Cool-down (2.5 MET)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Exercise</label>
+                                    <input type="text" class="form-control" id="exercise" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">Duration (min)</label>
+                                    <input type="number" class="form-control" id="duration" required>
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="bi bi-plus-circle"></i> ADD SESSION
+                                    </button>
+                                </div>
+                            </form>
+
+                            <hr>
+
+                            <h5>Today's Workouts</h5>
+                            <div id="workoutList" class="mt-3">
+                                <p class="text-muted">No workouts logged yet.</p>
+                            </div>
+                        </div>
+
+                        <!-- Workout Plan Tab -->
+                        <div class="tab-pane fade" id="plan">
+                            <h5>Recommended Exercises by Category</h5>
+                            <div class="row mt-3">
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <div class="card-header bg-danger text-white">🔥 Warm-up</div>
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item">Jumping Jacks</li>
+                                            <li class="list-group-item">Arm Circles</li>
+                                            <li class="list-group-item">Leg Swings</li>
+                                            <li class="list-group-item">Dynamic Stretches</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <div class="card-header bg-success text-white">💪 Workout</div>
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item">Push-ups</li>
+                                            <li class="list-group-item">Squats</li>
+                                            <li class="list-group-item">Lunges</li>
+                                            <li class="list-group-item">Planks</li>
+                                            <li class="list-group-item">Burpees</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card">
+                                        <div class="card-header bg-primary text-white">🧘 Cool-down</div>
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item">Static Stretching</li>
+                                            <li class="list-group-item">Deep Breathing</li>
+                                            <li class="list-group-item">Walking</li>
+                                            <li class="list-group-item">Yoga Poses</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Diet Guide Tab -->
+                        <div class="tab-pane fade" id="diet">
+                            <h5>Nutrition Plans</h5>
+                            <div class="accordion mt-3" id="dietAccordion">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#weightLoss">
+                                            Weight Loss
+                                        </button>
+                                    </h2>
+                                    <div id="weightLoss" class="accordion-collapse collapse show">
+                                        <div class="accordion-body">
+                                            <p><strong>Breakfast:</strong> Oatmeal with berries</p>
+                                            <p><strong>Lunch:</strong> Grilled chicken salad</p>
+                                            <p><strong>Dinner:</strong> Steamed fish with vegetables</p>
+                                            <p><strong>Snacks:</strong> Almonds, Greek yogurt</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#muscleGain">
+                                            Muscle Gain
+                                        </button>
+                                    </h2>
+                                    <div id="muscleGain" class="accordion-collapse collapse">
+                                        <div class="accordion-body">
+                                            <p><strong>Breakfast:</strong> Scrambled eggs with toast</p>
+                                            <p><strong>Lunch:</strong> Chicken breast with rice</p>
+                                            <p><strong>Dinner:</strong> Steak with sweet potato</p>
+                                            <p><strong>Snacks:</strong> Protein shake, peanut butter</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#endurance">
+                                            Endurance
+                                        </button>
+                                    </h2>
+                                    <div id="endurance" class="accordion-collapse collapse">
+                                        <div class="accordion-body">
+                                            <p><strong>Breakfast:</strong> Banana smoothie with oats</p>
+                                            <p><strong>Lunch:</strong> Pasta with lean meat</p>
+                                            <p><strong>Dinner:</strong> Salmon with quinoa</p>
+                                            <p><strong>Snacks:</strong> Energy bars, fruits</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Progress Tracker Tab -->
+                        <div class="tab-pane fade" id="progress">
+                            <h5>Workout Statistics</h5>
+                            <div class="alert alert-info">
+                                <strong>Lifetime Total:</strong> <span id="lifetimeTotal">0</span> minutes
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="text-center">Total Duration by Category</h6>
+                                    <div class="chart-container">
+                                        <canvas id="barChart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="text-center">Distribution</h6>
+                                    <div class="chart-container">
+                                        <canvas id="pieChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let barChart, pieChart;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadUserInfo();
+        loadWorkouts();
+    });
+
+    // User Info Form
+    document.getElementById('userForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const userData = {
+            name: document.getElementById('name').value,
+            regn_id: document.getElementById('regn_id').value,
+            age: document.getElementById('age').value,
+            gender: document.getElementById('gender').value,
+            height: document.getElementById('height').value,
+            weight: document.getElementById('weight').value
+        };
+
+        const response = await fetch('/api/user-info', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(userData)
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            alert(result.message);
+            loadUserInfo();
+        } else {
+            alert(result.message);
+        }
+    });
+
+    async function loadUserInfo() {
+        const response = await fetch('/api/user-info');
+        const data = await response.json();
+
+        if (data.user_info && data.user_info.bmi) {
+            document.getElementById('bmiValue').textContent = data.user_info.bmi;
+            document.getElementById('bmrValue').textContent = data.user_info.bmr;
+        }
+    }
+
+    // Workout Form
+    document.getElementById('workoutForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const workoutData = {
+            category: document.getElementById('category').value,
+            exercise: document.getElementById('exercise').value,
+            duration: document.getElementById('duration').value
+        };
+
+        const response = await fetch('/api/workouts', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(workoutData)
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            alert(result.message);
+            document.getElementById('workoutForm').reset();
+            loadWorkouts();
+        } else {
+            alert(result.message);
+        }
+    });
+
+    async function loadWorkouts() {
+        const response = await fetch('/api/workouts');
+        const data = await response.json();
+
+        const workoutList = document.getElementById('workoutList');
+        const today = new Date().toISOString().split('T')[0];
+
+        if (!data.workouts[today] || data.workouts[today].length === 0) {
+            workoutList.innerHTML = '<p class="text-muted">No workouts logged yet.</p>';
+        } else {
+            let html = '<div class="table-responsive"><table class="table table-striped">';
+            html += '<thead><tr><th>Category</th><th>Exercise</th><th>Duration</th><th>Calories</th></tr></thead><tbody>';
+
+            data.workouts[today].forEach(w => {
+                html += `<tr>
+                        <td><span class="badge bg-secondary">${w.category}</span></td>
+                        <td>${w.exercise}</td>
+                        <td>${w.duration} min</td>
+                        <td>${w.calories} cal</td>
+                    </tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            workoutList.innerHTML = html;
+        }
+    }
+
+    async function loadCharts() {
+        const response = await fetch('/api/workout-stats');
+        const data = await response.json();
+
+        document.getElementById('lifetimeTotal').textContent = data.total_time;
+
+        // Destroy existing charts
+        if (barChart) barChart.destroy();
+        if (pieChart) pieChart.destroy();
+
+        // Bar Chart
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        barChart = new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: data.categories,
+                datasets: [{
+                    label: 'Total Minutes',
+                    data: data.durations,
+                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {beginAtZero: true}
+                }
+            }
+        });
+
+        // Pie Chart
+        const ctxPie = document.getElementById('pieChart').getContext('2d');
+        pieChart = new Chart(ctxPie, {
+            type: 'pie',
+            data: {
+                labels: data.categories,
+                datasets: [{
+                    data: data.durations,
+                    backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+
+    function exportPDF() {
+        window.location.href = '/api/export-pdf';
+    }
+</script>
+</body>
+</html>
