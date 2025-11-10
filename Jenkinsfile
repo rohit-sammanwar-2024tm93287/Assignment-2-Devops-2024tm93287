@@ -52,55 +52,57 @@ pipeline {
 
         stage('Deploy to EKS') {
             steps {
-                sh """
-                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
-                    kubectl create namespace ${params.ENVIRONMENT} --dry-run=client -o yaml | kubectl apply -f -
+                withAWS(credentials: 'aws-credentials', region: 'us-east-1') {
+                    sh """
+                        aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+                        kubectl create namespace ${params.ENVIRONMENT} --dry-run=client -o yaml | kubectl apply -f -
 
-                    kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: aceest-app
-  namespace: ${params.ENVIRONMENT}
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: aceest-fitness
-  template:
-    metadata:
-      labels:
-        app: aceest-fitness
-    spec:
-      containers:
-      - name: aceest-app
-        image: ${DOCKER_IMAGE}:${IMAGE_TAG}
-        ports:
-        - containerPort: 5000
-        resources:
-          requests:
-            memory: 128Mi
-            cpu: 100m
-          limits:
-            memory: 256Mi
-            cpu: 200m
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: aceest-service
-  namespace: ${params.ENVIRONMENT}
-spec:
-  type: LoadBalancer
-  selector:
-    app: aceest-fitness
-  ports:
-  - port: 80
-    targetPort: 5000
-EOF
+                        kubectl apply -f - <<EOF
+                        apiVersion: apps/v1
+                        kind: Deployment
+                        metadata:
+                          name: aceest-app
+                          namespace: ${params.ENVIRONMENT}
+                        spec:
+                          replicas: 2
+                          selector:
+                            matchLabels:
+                              app: aceest-fitness
+                          template:
+                            metadata:
+                              labels:
+                                app: aceest-fitness
+                            spec:
+                              containers:
+                              - name: aceest-app
+                                image: ${DOCKER_IMAGE}:${IMAGE_TAG}
+                                ports:
+                                - containerPort: 5000
+                                resources:
+                                  requests:
+                                    memory: 128Mi
+                                    cpu: 100m
+                                  limits:
+                                    memory: 256Mi
+                                    cpu: 200m
+                        ---
+                        apiVersion: v1
+                        kind: Service
+                        metadata:
+                          name: aceest-service
+                          namespace: ${params.ENVIRONMENT}
+                        spec:
+                          type: LoadBalancer
+                          selector:
+                            app: aceest-fitness
+                          ports:
+                          - port: 80
+                            targetPort: 5000
+                        EOF
 
-                    kubectl rollout status deployment/aceest-app -n ${params.ENVIRONMENT} --timeout=5m
-                """
+                        kubectl rollout status deployment/aceest-app -n ${params.ENVIRONMENT} --timeout=5m
+                    """
+                    }
             }
         }
 
