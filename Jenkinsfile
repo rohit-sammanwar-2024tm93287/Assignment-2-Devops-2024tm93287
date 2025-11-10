@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         DOCKERHUB_CREDS = credentials('dockerhub-credentials')
-        DOCKER_IMAGE = 'rohitsammanwar/aceest-fitness'
+        DOCKER_IMAGE = '2024tm93287/aceest-fitness'
         AWS_REGION = 'us-east-1'
         EKS_CLUSTER = 'aceest-fitness-cluster'
         IMAGE_TAG = "${BUILD_NUMBER}"
