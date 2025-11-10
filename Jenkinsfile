@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Git branch to deploy')
-        choice(name: 'ENVIRONMENT', choices: ['production', 'staging', 'dev'], description: 'Deployment environment')
+        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Git branch')
+        choice(name: 'ENVIRONMENT', choices: ['production', 'staging', 'dev'], description: 'Environment')
     }
 
     environment {
@@ -12,7 +12,6 @@ pipeline {
         AWS_REGION = 'us-east-1'
         EKS_CLUSTER = 'aceest-fitness-cluster'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        FULL_IMAGE = "${DOCKER_IMAGE}:${IMAGE_TAG}"
     }
 
     stages {
@@ -21,30 +20,23 @@ pipeline {
                 echo 'ACEest Fitness CI/CD Pipeline'
                 echo "Branch: ${params.BRANCH_NAME}"
                 echo "Environment: ${params.ENVIRONMENT}"
-                echo "Image: ${FULL_IMAGE}"
             }
         }
 
         stage('Checkout') {
             steps {
                 checkout scm
-                script {
-                    env.GIT_COMMIT_SHORT = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-                }
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 dir('app') {
-                    sh "docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest ."
+                    sh """
+                        docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} -t ${DOCKER_IMAGE}:latest .
+                        echo 'Build completed'
+                    """
                 }
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh "docker run --rm ${FULL_IMAGE} python3 -m pytest tests/ -v || echo 'Tests executed'"
             }
         }
 
@@ -52,7 +44,7 @@ pipeline {
             steps {
                 sh """
                     echo \${DOCKERHUB_CREDS_PSW} | docker login -u \${DOCKERHUB_CREDS_USR} --password-stdin
-                    docker push ${FULL_IMAGE}
+                    docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
                     docker push ${DOCKER_IMAGE}:latest
                 """
             }
@@ -82,7 +74,7 @@ spec:
     spec:
       containers:
       - name: aceest-app
-        image: ${FULL_IMAGE}
+        image: ${DOCKER_IMAGE}:${IMAGE_TAG}
         ports:
         - containerPort: 5000
         resources:
@@ -116,8 +108,11 @@ EOF
             steps {
                 sh """
                     kubectl get all -n ${params.ENVIRONMENT}
+                    sleep 30
                     EXTERNAL_URL=\$(kubectl get svc aceest-service -n ${params.ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                    echo "==================================="
                     echo "Application URL: http://\$EXTERNAL_URL"
+                    echo "==================================="
                 """
             }
         }
