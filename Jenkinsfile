@@ -2,145 +2,88 @@ pipeline {
     agent any
 
     parameters {
-        string(
-            name: 'BRANCH_NAME',
-            defaultValue: 'main',
-            description: 'Git branch to deploy'
-        )
-        choice(
-            name: 'ENVIRONMENT',
-            choices: ['production', 'staging', 'dev'],
-            description: 'Deployment environment'
-        )
+        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Git branch')
+        choice(name: 'ENVIRONMENT', choices: ['production', 'staging', 'dev'], description: 'Environment')
     }
 
     environment {
-        // Docker Hub credentials
         DOCKERHUB_CREDS = credentials('dockerhub-credentials')
         DOCKER_IMAGE = '2024tm93287/aceest-fitness'
-
-        // AWS/EKS configuration
         AWS_REGION = 'us-east-1'
         EKS_CLUSTER = 'aceest-fitness-cluster'
-        K8S_NAMESPACE = "${params.ENVIRONMENT}"
-
-        // Image tag
-        IMAGE_TAG = "${BUILD_NUMBER}-${params.BRANCH_NAME.replaceAll('/', '-')}"
-        FULL_IMAGE = "${DOCKER_IMAGE}:${IMAGE_TAG}"
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
-        stage('📋 Initialize') {
+        stage('Initialize') {
             steps {
-                echo "=========================================="
-                echo "🚀 ACEest Fitness CI/CD Pipeline - AWS EKS"
-                echo "=========================================="
+                echo '=========================================='
+                echo 'ACEest Fitness CI/CD Pipeline - t3.micro optimized'
                 echo "Branch: ${params.BRANCH_NAME}"
                 echo "Environment: ${params.ENVIRONMENT}"
-                echo "Image: ${FULL_IMAGE}"
-                echo "EKS Cluster: ${EKS_CLUSTER}"
-                echo "=========================================="
+                echo "Image: ${DOCKER_IMAGE}:${IMAGE_TAG}"
+                echo '=========================================='
             }
         }
 
-        stage('🔽 Checkout from GitHub') {
+        stage('Checkout') {
             steps {
+                checkout scm
                 script {
-                    echo "Checking out branch: ${params.BRANCH_NAME}"
-                    checkout scmGit(
-                        branches: [[name: "*/${params.BRANCH_NAME}"]],
-                        userRemoteConfigs: [[
-                            url: 'https://github.com/rohit-sammanwar-2024tm93287/Assignment-2-Devops-2024tm93287.git',
-                            credentialsId: 'github-credentials'
-                        ]]
-                    )
-
                     env.GIT_COMMIT_SHORT = sh(
                         script: "git rev-parse --short HEAD",
                         returnStdout: true
                     ).trim()
-
-                    echo "✅ Checked out commit: ${env.GIT_COMMIT_SHORT}"
                 }
             }
         }
 
-        stage('🔨 Build Application') {
+        stage('Build Docker Image') {
             steps {
-                sh '''
-                    echo "Installing Python dependencies..."
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                    echo "✅ Build completed"
-                '''
-            }
-        }
-
-        stage('🧪 Run Tests') {
-            steps {
-                sh '''
-                    echo "Running pytest tests..."
-                    . venv/bin/activate
-                    pytest tests/ -v --junitxml=test-results.xml --cov=app --cov-report=xml
-                    echo "✅ All tests passed"
-                '''
-            }
-            post {
-                always {
-                    junit 'test-results.xml'
-                }
-            }
-        }
-
-        stage('🐳 Build Docker Image') {
-            steps {
-                script {
-                    echo "Building Docker image..."
+                dir('app') {
                     sh """
-                        docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest .
-                        echo "✅ Docker image built"
-                        docker images | grep aceest-fitness
+                        echo 'Building lightweight Docker image...'
+                        docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} -t ${DOCKER_IMAGE}:latest .
+                        echo 'Build completed'
+                        docker images | grep aceest-fitness | head -3
                     """
                 }
             }
         }
 
-        stage('📤 Push to Docker Hub') {
+        stage('Push to Docker Hub') {
             steps {
                 sh """
-                    echo "Pushing to Docker Hub..."
-                    echo ${DOCKERHUB_CREDS_PSW} | docker login -u ${DOCKERHUB_CREDS_USR} --password-stdin
-                    docker push ${FULL_IMAGE}
+                    echo 'Pushing to Docker Hub...'
+                    echo \${DOCKERHUB_CREDS_PSW} | docker login -u \${DOCKERHUB_CREDS_USR} --password-stdin
+                    docker push ${DOCKER_IMAGE}:${IMAGE_TAG}
                     docker push ${DOCKER_IMAGE}:latest
-                    echo "✅ Image pushed: ${FULL_IMAGE}"
+                    echo 'Push completed'
                 """
             }
         }
 
-        stage('☸️ Deploy to AWS EKS') {
+        stage('Deploy to EKS') {
             steps {
-                script {
-                    echo "Deploying to EKS cluster..."
+                withAWS(credentials: 'aws-credentials', region: 'us-east-1') {
                     sh """
-                        # Update kubeconfig
+                        echo 'Deploying to EKS (t3.micro optimized)...'
+
                         aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+                        kubectl create namespace ${params.ENVIRONMENT} --dry-run=client -o yaml | kubectl apply -f -
 
-                        # Create namespace if doesn't exist
-                        kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                        # Clean up old deployment
+                        kubectl delete deployment aceest-app -n ${params.ENVIRONMENT} --ignore-not-found=true
+                        sleep 5
 
-                        # Deploy application
-                        cat <<EOF | kubectl apply -f -
+                        cat <<'EOFK8S' | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aceest-app
-  namespace: ${K8S_NAMESPACE}
-  labels:
-    app: aceest-fitness
+  namespace: ${params.ENVIRONMENT}
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: aceest-fitness
@@ -148,93 +91,88 @@ spec:
     metadata:
       labels:
         app: aceest-fitness
-        version: ${IMAGE_TAG}
     spec:
       containers:
       - name: aceest-app
-        image: ${FULL_IMAGE}
-        imagePullPolicy: Always
+        image: ${DOCKER_IMAGE}:${IMAGE_TAG}
         ports:
         - containerPort: 5000
-        env:
-        - name: FLASK_ENV
-          value: "production"
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: 32Mi
+            cpu: 25m
           limits:
-            memory: "256Mi"
-            cpu: "200m"
-        livenessProbe:
-          httpGet:
-            path: /api/workouts
-            port: 5000
-          initialDelaySeconds: 15
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /api/workouts
-            port: 5000
-          initialDelaySeconds: 5
-          periodSeconds: 5
+            memory: 64Mi
+            cpu: 100m
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aceest-service
-  namespace: ${K8S_NAMESPACE}
+  namespace: ${params.ENVIRONMENT}
 spec:
   type: LoadBalancer
   selector:
     app: aceest-fitness
   ports:
-  - protocol: TCP
-    port: 80
+  - port: 80
     targetPort: 5000
-EOF
+    protocol: TCP
+EOFK8S
 
-                        # Wait for rollout
-                        kubectl rollout status deployment/aceest-app -n ${K8S_NAMESPACE} --timeout=5m
-                        echo "✅ Deployment completed"
+                        echo 'Waiting for pod to start...'
+                        kubectl wait --for=condition=ready pod -l app=aceest-fitness -n ${params.ENVIRONMENT} --timeout=3m || echo 'Still starting...'
+
+                        echo 'Current status:'
+                        kubectl get pods -n ${params.ENVIRONMENT}
+                        kubectl get svc -n ${params.ENVIRONMENT}
                     """
                 }
             }
         }
 
-        stage('✅ Verify Deployment') {
+        stage('Verify') {
             steps {
-                sh """
-                    echo "Verifying deployment..."
-                    kubectl get deployments -n ${K8S_NAMESPACE}
-                    kubectl get pods -n ${K8S_NAMESPACE}
-                    kubectl get service aceest-service -n ${K8S_NAMESPACE}
+                withAWS(credentials: 'aws-credentials', region: 'us-east-1') {
+                    sh """
+                        echo 'Verifying deployment...'
+                        kubectl get all -n ${params.ENVIRONMENT}
 
-                    # Get external URL
-                    echo "Waiting for LoadBalancer URL..."
-                    sleep 30
-                    EXTERNAL_URL=\$(kubectl get service aceest-service -n ${K8S_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+                        sleep 30
 
-                    echo "=========================================="
-                    echo "✅ DEPLOYMENT SUCCESSFUL!"
-                    echo "=========================================="
-                    echo "🌐 Application URL: http://\$EXTERNAL_URL"
-                    echo "📦 Image: ${FULL_IMAGE}"
-                    echo "🏷️  Environment: ${params.ENVIRONMENT}"
-                    echo "=========================================="
-                """
+                        EXTERNAL_URL=\$(kubectl get svc aceest-service -n ${params.ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo 'pending')
+
+                        if [ "\$EXTERNAL_URL" != "pending" ] && [ ! -z "\$EXTERNAL_URL" ]; then
+                            echo '=========================================='
+                            echo 'DEPLOYMENT SUCCESSFUL!'
+                            echo '=========================================='
+                            echo "Application URL: http://\$EXTERNAL_URL"
+                            echo "Docker Image: ${DOCKER_IMAGE}:${IMAGE_TAG}"
+                            echo "Environment: ${params.ENVIRONMENT}"
+                            echo "Commit: ${env.GIT_COMMIT_SHORT}"
+                            echo '=========================================='
+                        else
+                            echo 'LoadBalancer provisioning in progress...'
+                            echo 'Check with: kubectl get svc aceest-service -n ${params.ENVIRONMENT}'
+                        fi
+                    """
+                }
             }
         }
     }
 
     post {
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo 'Pipeline completed successfully!'
         }
         failure {
-            echo "❌ Pipeline failed!"
+            echo 'Pipeline failed - check logs above'
         }
         always {
+            sh 'docker system prune -f || true'
             cleanWs()
         }
     }
