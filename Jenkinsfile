@@ -230,11 +230,11 @@ EOF
 
     post {
         success {
-            echo "✅ Pipeline completed successfully!"
-            echo "🎉 Application deployed to ${params.ENVIRONMENT} environment"
+            echo "Pipeline completed successfully!"
+            echo "Application deployed to ${params.ENVIRONMENT} environment"
         }
         failure {
-            echo "❌ Pipeline failed!"
+            echo "Pipeline failed!"
             echo "Check the console output above for error details"
         }
         always {
