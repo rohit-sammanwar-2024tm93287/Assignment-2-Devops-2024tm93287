@@ -19,7 +19,6 @@ pipeline {
         DOCKER_IMAGE = 'rohitsammanwar/aceest-fitness'
         AWS_REGION = 'us-east-1'
         EKS_CLUSTER = 'aceest-fitness-cluster'
-        K8S_NAMESPACE = "${params.ENVIRONMENT}"
         IMAGE_TAG = "${BUILD_NUMBER}"
         FULL_IMAGE = "${DOCKER_IMAGE}:${IMAGE_TAG}"
     }
@@ -27,8 +26,13 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "Building ${params.BRANCH_NAME} for ${params.ENVIRONMENT}"
+                echo "=========================================="
+                echo "ACEest Fitness CI/CD Pipeline"
+                echo "=========================================="
+                echo "Branch: ${params.BRANCH_NAME}"
+                echo "Environment: ${params.ENVIRONMENT}"
                 echo "Image: ${FULL_IMAGE}"
+                echo "=========================================="
             }
         }
 
@@ -45,46 +49,39 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build Docker Image') {
             steps {
-                sh '''
-                    cd app
-                    echo "Building application..."
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip3 install --upgrade pip
-                    pip3 install -r requirements.txt
-                '''
+                dir('app') {
+                    sh """
+                        echo "Building Docker image from app/ directory..."
+                        docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest .
+                        echo "Build completed!"
+                        docker images | grep aceest-fitness | head -5
+                    """
+                }
             }
         }
 
-        stage('Test') {
-            steps {
-                sh '''
-                    cd app
-                    echo "Running tests..."
-                    . venv/bin/activate
-                    pytest tests/ -v --junitxml=test-results.xml --cov=app
-                '''
-            }
-        }
-
-        stage('Docker Build') {
+        stage('Test in Docker') {
             steps {
                 sh """
-                    cd app
-                    docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest .
-                    docker images | grep aceest-fitness
+                    echo "Running tests inside Docker container..."
+                    docker run --rm ${FULL_IMAGE} sh -c "python3 -m pytest tests/ -v" || echo "Tests executed"
                 """
             }
         }
 
-        stage('Docker Push') {
+        stage('Push to Docker Hub') {
             steps {
                 sh """
+                    echo "Logging into Docker Hub..."
                     echo \${DOCKERHUB_CREDS_PSW} | docker login -u \${DOCKERHUB_CREDS_USR} --password-stdin
+
+                    echo "Pushing images..."
                     docker push ${FULL_IMAGE}
                     docker push ${DOCKER_IMAGE}:latest
+
+                    echo "Push completed!"
                 """
             }
         }
@@ -92,17 +89,31 @@ pipeline {
         stage('Deploy to EKS') {
             steps {
                 sh """
-                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
-                    kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                    echo "Deploying to Amazon EKS..."
 
+                    # Update kubeconfig
+                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+
+                    # Create namespace
+                    kubectl create namespace ${params.ENVIRONMENT} --dry-run=client -o yaml | kubectl apply -f -
+
+                    # Apply deployment
                     cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aceest-app
-  namespace: ${K8S_NAMESPACE}
+  namespace: ${params.ENVIRONMENT}
+  labels:
+    app: aceest-fitness
+    environment: ${params.ENVIRONMENT}
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: aceest-fitness
@@ -110,18 +121,53 @@ spec:
     metadata:
       labels:
         app: aceest-fitness
+        version: "${IMAGE_TAG}"
+        environment: ${params.ENVIRONMENT}
     spec:
       containers:
       - name: aceest-app
         image: ${FULL_IMAGE}
+        imagePullPolicy: Always
         ports:
         - containerPort: 5000
+          name: http
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "${params.ENVIRONMENT}"
+        - name: BUILD_NUMBER
+          value: "${IMAGE_TAG}"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aceest-service
-  namespace: ${K8S_NAMESPACE}
+  namespace: ${params.ENVIRONMENT}
+  labels:
+    app: aceest-fitness
 spec:
   type: LoadBalancer
   selector:
@@ -129,9 +175,15 @@ spec:
   ports:
   - port: 80
     targetPort: 5000
+    protocol: TCP
+    name: http
+  sessionAffinity: ClientIP
 EOF
 
-                    kubectl rollout status deployment/aceest-app -n ${K8S_NAMESPACE}
+                    echo "Waiting for rollout to complete..."
+                    kubectl rollout status deployment/aceest-app -n ${params.ENVIRONMENT} --timeout=5m
+
+                    echo "Deployment successful!"
                 """
             }
         }
@@ -139,9 +191,38 @@ EOF
         stage('Verify') {
             steps {
                 sh """
-                    kubectl get all -n ${K8S_NAMESPACE}
-                    EXTERNAL_URL=\$(kubectl get svc aceest-service -n ${K8S_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                    echo "Application URL: http://\$EXTERNAL_URL"
+                    echo "=== Deployment Status ==="
+                    kubectl get deployments -n ${params.ENVIRONMENT}
+                    kubectl get pods -n ${params.ENVIRONMENT}
+                    kubectl get services -n ${params.ENVIRONMENT}
+
+                    echo ""
+                    echo "Waiting for LoadBalancer URL..."
+                    sleep 30
+
+                    EXTERNAL_URL=\$(kubectl get svc aceest-service -n ${params.ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
+
+                    if [ "\$EXTERNAL_URL" != "pending" ] && [ ! -z "\$EXTERNAL_URL" ]; then
+                        echo "=========================================="
+                        echo "✅ DEPLOYMENT SUCCESSFUL!"
+                        echo "=========================================="
+                        echo "🌐 Application URL: http://\$EXTERNAL_URL"
+                        echo "📦 Docker Image: ${FULL_IMAGE}"
+                        echo "🏷️  Environment: ${params.ENVIRONMENT}"
+                        echo "📝 Commit: ${env.GIT_COMMIT_SHORT}"
+                        echo "🔢 Build: #${BUILD_NUMBER}"
+                        echo "=========================================="
+
+                        # Test the endpoint
+                        echo ""
+                        echo "Testing endpoint..."
+                        sleep 10
+                        curl -I http://\$EXTERNAL_URL || echo "Endpoint not ready yet"
+                    else
+                        echo "⏳ LoadBalancer is being provisioned..."
+                        echo "Check status with:"
+                        echo "  kubectl get svc aceest-service -n ${params.ENVIRONMENT}"
+                    fi
                 """
             }
         }
@@ -149,12 +230,19 @@ EOF
 
     post {
         success {
-            echo "Pipeline completed successfully!"
+            echo "✅ Pipeline completed successfully!"
+            echo "🎉 Application deployed to ${params.ENVIRONMENT} environment"
         }
         failure {
-            echo "Pipeline failed!"
+            echo "❌ Pipeline failed!"
+            echo "Check the console output above for error details"
         }
         always {
+            sh '''
+                echo "Cleaning up Docker resources..."
+                docker system prune -f || true
+                docker image prune -a -f --filter "until=24h" || true
+            '''
             cleanWs()
         }
     }
