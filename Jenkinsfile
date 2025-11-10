@@ -48,6 +48,7 @@ pipeline {
         stage('Build') {
             steps {
                 sh '''
+                    cd app
                     echo "Building application..."
                     python3 -m venv venv
                     . venv/bin/activate
@@ -60,6 +61,7 @@ pipeline {
         stage('Test') {
             steps {
                 sh '''
+                    cd app
                     echo "Running tests..."
                     . venv/bin/activate
                     pytest tests/ -v --junitxml=test-results.xml --cov=app
@@ -70,6 +72,7 @@ pipeline {
         stage('Docker Build') {
             steps {
                 sh """
+                    cd app
                     docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest .
                     docker images | grep aceest-fitness
                 """
