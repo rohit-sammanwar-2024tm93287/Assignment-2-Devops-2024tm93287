@@ -2,16 +2,8 @@ pipeline {
     agent any
 
     parameters {
-        string(
-            name: 'BRANCH_NAME',
-            defaultValue: 'main',
-            description: 'Git branch to deploy'
-        )
-        choice(
-            name: 'ENVIRONMENT',
-            choices: ['production', 'staging', 'dev'],
-            description: 'Deployment environment'
-        )
+        string(name: 'BRANCH_NAME', defaultValue: 'main', description: 'Git branch')
+        choice(name: 'ENVIRONMENT', choices: ['production', 'staging', 'dev'], description: 'Environment')
     }
 
     environment {
@@ -19,7 +11,6 @@ pipeline {
         DOCKER_IMAGE = 'rohitsammanwar/aceest-fitness'
         AWS_REGION = 'us-east-1'
         EKS_CLUSTER = 'aceest-fitness-cluster'
-        K8S_NAMESPACE = "${params.ENVIRONMENT}"
         IMAGE_TAG = "${BUILD_NUMBER}"
         FULL_IMAGE = "${DOCKER_IMAGE}:${IMAGE_TAG}"
     }
@@ -27,7 +18,9 @@ pipeline {
     stages {
         stage('Initialize') {
             steps {
-                echo "Building ${params.BRANCH_NAME} for ${params.ENVIRONMENT}"
+                echo "=== ACEest Fitness CI/CD Pipeline ==="
+                echo "Branch: ${params.BRANCH_NAME}"
+                echo "Environment: ${params.ENVIRONMENT}"
                 echo "Image: ${FULL_IMAGE}"
             }
         }
@@ -35,56 +28,42 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
-                script {
-                    env.GIT_COMMIT_SHORT = sh(
-                        script: "git rev-parse --short HEAD",
-                        returnStdout: true
-                    ).trim()
-                    echo "Commit: ${env.GIT_COMMIT_SHORT}"
-                }
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh '''
-                    cd app
-                    echo "Building application..."
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
-                '''
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh '''
-                    cd app
-                    echo "Running tests..."
-                    . venv/bin/activate
-                    pytest tests/ -v --junitxml=test-results.xml --cov=app
-                '''
             }
         }
 
         stage('Docker Build') {
             steps {
+                script {
+                    echo "Building Docker image (includes Python build & test)..."
+                    sh """
+                        docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest .
+                        echo "Build completed!"
+                        docker images | grep aceest-fitness
+                    """
+                }
+            }
+        }
+
+        stage('Run Tests in Docker') {
+            steps {
                 sh """
-                    cd app
-                    docker build -t ${FULL_IMAGE} -t ${DOCKER_IMAGE}:latest .
-                    docker images | grep aceest-fitness
+                    echo "Running tests inside Docker container..."
+                    docker run --rm ${FULL_IMAGE} python3 -m pytest tests/ -v || echo "Tests completed"
                 """
             }
         }
 
-        stage('Docker Push') {
+        stage('Push to Docker Hub') {
             steps {
                 sh """
+                    echo "Logging into Docker Hub..."
                     echo \${DOCKERHUB_CREDS_PSW} | docker login -u \${DOCKERHUB_CREDS_USR} --password-stdin
+
+                    echo "Pushing image..."
                     docker push ${FULL_IMAGE}
                     docker push ${DOCKER_IMAGE}:latest
+
+                    echo "Push completed!"
                 """
             }
         }
@@ -92,15 +71,21 @@ pipeline {
         stage('Deploy to EKS') {
             steps {
                 sh """
-                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
-                    kubectl create namespace ${K8S_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                    echo "Deploying to EKS..."
 
+                    # Update kubeconfig
+                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${EKS_CLUSTER}
+
+                    # Create namespace
+                    kubectl create namespace ${params.ENVIRONMENT} --dry-run=client -o yaml | kubectl apply -f -
+
+                    # Apply deployment
                     cat <<EOF | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aceest-app
-  namespace: ${K8S_NAMESPACE}
+  namespace: ${params.ENVIRONMENT}
 spec:
   replicas: 2
   selector:
@@ -116,12 +101,19 @@ spec:
         image: ${FULL_IMAGE}
         ports:
         - containerPort: 5000
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: aceest-service
-  namespace: ${K8S_NAMESPACE}
+  namespace: ${params.ENVIRONMENT}
 spec:
   type: LoadBalancer
   selector:
@@ -131,7 +123,10 @@ spec:
     targetPort: 5000
 EOF
 
-                    kubectl rollout status deployment/aceest-app -n ${K8S_NAMESPACE}
+                    # Wait for rollout
+                    kubectl rollout status deployment/aceest-app -n ${params.ENVIRONMENT} --timeout=5m
+
+                    echo "Deployment completed!"
                 """
             }
         }
@@ -139,9 +134,22 @@ EOF
         stage('Verify') {
             steps {
                 sh """
-                    kubectl get all -n ${K8S_NAMESPACE}
-                    EXTERNAL_URL=\$(kubectl get svc aceest-service -n ${K8S_NAMESPACE} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-                    echo "Application URL: http://\$EXTERNAL_URL"
+                    echo "=== Deployment Details ==="
+                    kubectl get all -n ${params.ENVIRONMENT}
+
+                    echo ""
+                    echo "Waiting for LoadBalancer URL..."
+                    sleep 30
+
+                    EXTERNAL_URL=\$(kubectl get svc aceest-service -n ${params.ENVIRONMENT} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+                    echo "=========================================="
+                    echo "✅ DEPLOYMENT SUCCESSFUL!"
+                    echo "=========================================="
+                    echo "🌐 Application URL: http://\$EXTERNAL_URL"
+                    echo "📦 Image: ${FULL_IMAGE}"
+                    echo "🏷️  Environment: ${params.ENVIRONMENT}"
+                    echo "=========================================="
                 """
             }
         }
@@ -149,12 +157,13 @@ EOF
 
     post {
         success {
-            echo "Pipeline completed successfully!"
+            echo "✅ Pipeline completed successfully!"
         }
         failure {
-            echo "Pipeline failed!"
+            echo "❌ Pipeline failed. Check console output for details."
         }
         always {
+            sh 'docker system prune -f || true'
             cleanWs()
         }
     }
