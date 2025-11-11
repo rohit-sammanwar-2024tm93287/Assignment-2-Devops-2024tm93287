@@ -30,6 +30,12 @@ ACEest Fitness is a Flask-based fitness tracking application with multiple versi
 ✅ Automated testing and building  
 ✅ LoadBalancer for external access
 
+### Jenkins Credentials (Intentionally sharing the credentials and not the URL)
+
+The URL for the jenkins can be found in the submitted document along with the Assignment.
+- **Username**: admin
+- **Password**: Admin@123
+
 ### Technology Stack
 
 | Component | Technology |
